@@ -82,12 +82,13 @@ final class AnsiPainter implements Painter
 
         if ($action instanceof EnableMouseCapture) {
             if (Terminal::isWindows()) {
-                $windowsConsole = WindowsConsole::getInstance();
+                // Also set Windows Console API flags so WinStreamReader receives mouse events
                 // https://learn.microsoft.com/en-us/windows/console/setconsolemode
+                $windowsConsole = WindowsConsole::getInstance();
                 $enableExtendedFlags = 0x0080;
                 $enableWindowInput = 0x0008;
                 $enableMouseInput = 0x0010;
-                $enableExtras = $enableExtendedFlags| $enableWindowInput | $enableMouseInput;
+                $enableExtras = $enableExtendedFlags | $enableWindowInput | $enableMouseInput;
                 if ($action->enable) {
                     $mode = $windowsConsole->getConsoleMode();
                     $windowsConsole->setConsoleMode($mode | $enableExtras);
@@ -95,27 +96,28 @@ final class AnsiPainter implements Painter
                     $mode = $windowsConsole->getConsoleMode();
                     $windowsConsole->setConsoleMode($mode & ~$enableExtras);
                 }
-            } else {
-                $this->writer->write(implode('', array_map(fn (string $code): string => $this->csi($code), $action->enable ? [
-                    // Normal tracking: Send mouse X & Y on button press and release
-                    '?1000h',
-                    // Button-event tracking: Report button motion events (dragging)
-                    '?1002h',
-                    // Any-event tracking: Report all motion events
-                    '?1003h',
-                    // RXVT mouse mode: Allows mouse coordinates of >223
-                    '?1015h',
-                    // SGR mouse mode: Allows mouse coordinates of >223, preferred over RXVT mode
-                    '?1006h',
-                ] : [
-                    // same as above but reversed
-                    '?1006l',
-                    '?1015l',
-                    '?1003l',
-                    '?1002l',
-                    '?1000l',
-                ])));
             }
+            // Always write ANSI VT sequences (supported by all modern terminals)
+            $this->writer->write(implode('', array_map(fn (string $code): string => $this->csi($code), $action->enable ? [
+                // Normal tracking: Send mouse X & Y on button press and release
+                '?1000h',
+                // Button-event tracking: Report button motion events (dragging)
+                '?1002h',
+                // Any-event tracking: Report all motion events
+                '?1003h',
+                // RXVT mouse mode: Allows mouse coordinates of >223
+                '?1015h',
+                // SGR mouse mode: Allows mouse coordinates of >223, preferred over RXVT mode
+                '?1006h',
+            ] : [
+                // same as above but reversed
+                '?1006l',
+                '?1015l',
+                '?1003l',
+                '?1002l',
+                '?1000l',
+            ])));
+
             return;
         }
 

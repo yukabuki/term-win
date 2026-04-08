@@ -7,11 +7,16 @@ namespace PhpTui\Term;
 use FFI;
 use RuntimeException;
 
-final class WindowsConsole
+final class WindowsConsole implements WindowsConsoleInterface
 {
     // https://learn.microsoft.com/en-us/windows/console/getstdhandle
     private const STD_INPUT_HANDLE = -10;
     private const STD_OUTPUT_HANDLE = -11;
+
+    // https://learn.microsoft.com/en-us/windows/console/input-record-str
+    private const KEY_EVENT = 0x0001;
+    private const MOUSE_EVENT = 0x0002;
+    private const FOCUS_EVENT = 0x0010;
 
     private static ?self $instance = null;
 
@@ -209,22 +214,57 @@ final class WindowsConsole
         return $this->mode->cdata;
     }
 
-    public function readConsoleInput(int $length): FFI\CData
+    public function peekEvents(): int
     {
         /**
          * @phpstan-ignore-next-line */
-        $this->ffi->ReadConsoleInputA($this->handleIn, $this->inputRecordRead, $length, FFI::addr($this->numEventsRead));
+        $this->ffi->PeekConsoleInputW($this->handleIn, $this->inputRecordPeek, 1, FFI::addr($this->numEventsPeek));
 
-        return $this->inputRecordRead;
+        /**
+         * @phpstan-ignore-next-line */
+        return (int) $this->numEventsPeek->cdata;
     }
 
-    public function peekConsoleInput(int $length): FFI\CData
+    public function readNextEvent(): ?array
     {
         /**
          * @phpstan-ignore-next-line */
-        $this->ffi->PeekConsoleInputA($this->handleIn, $this->inputRecordPeek, $length, FFI::addr($this->numEventsPeek));
+        $this->ffi->ReadConsoleInputW($this->handleIn, $this->inputRecordRead, 1, FFI::addr($this->numEventsRead));
 
-        return $this->numEventsPeek;
+        $record = $this->inputRecordRead[0];
+
+        switch ($record->EventType) {
+            case self::KEY_EVENT:
+                $keyEvent = $record->Event->KeyEvent;
+
+                return [
+                    'type' => 'key',
+                    'keyDown' => (bool) $keyEvent->bKeyDown,
+                    'virtualKeyCode' => (int) $keyEvent->wVirtualKeyCode,
+                    'unicodeChar' => (int) $keyEvent->uChar->UnicodeChar,
+                    'controlKeyState' => (int) $keyEvent->dwControlKeyState,
+                ];
+            case self::MOUSE_EVENT:
+                $mouseEvent = $record->Event->MouseEvent;
+
+                return [
+                    'type' => 'mouse',
+                    'x' => (int) $mouseEvent->dwMousePosition->X,
+                    'y' => (int) $mouseEvent->dwMousePosition->Y,
+                    'buttonState' => (int) $mouseEvent->dwButtonState,
+                    'controlKeyState' => (int) $mouseEvent->dwControlKeyState,
+                    'eventFlags' => (int) $mouseEvent->dwEventFlags,
+                ];
+            case self::FOCUS_EVENT:
+                $focusEvent = $record->Event->FocusEvent;
+
+                return [
+                    'type' => 'focus',
+                    'setFocus' => (bool) $focusEvent->bSetFocus,
+                ];
+            default:
+                return null;
+        }
     }
 
     /**

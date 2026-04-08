@@ -8,19 +8,20 @@ use PhpTui\Term\InformationProvider;
 use PhpTui\Term\TerminalInformation\Size;
 use PhpTui\Term\TerminalInformation;
 use PhpTui\Term\WindowsConsole;
+use PhpTui\Term\WindowsConsoleInterface;
 
 final class SizeFromWinProvider implements InformationProvider
 {
-    private WindowsConsole $windowsConsole;
+    private WindowsConsoleInterface $windowsConsole;
 
-    private function __construct()
+    private function __construct(?WindowsConsoleInterface $windowsConsole = null)
     {
-        $this->windowsConsole = WindowsConsole::getInstance();
+        $this->windowsConsole = $windowsConsole ?? WindowsConsole::getInstance();
     }
 
-    public static function new(): self
+    public static function new(?WindowsConsoleInterface $windowsConsole = null): self
     {
-        return new self();
+        return new self($windowsConsole);
     }
 
     public function for(string $classFqn): ?TerminalInformation
@@ -31,20 +32,20 @@ final class SizeFromWinProvider implements InformationProvider
 
         $out = $this->windowsConsole->getConsoleScreenBufferInfo();
 
-        if (! is_array($out)) {
-            return null;
-        }
-
         /**
          * @phpstan-ignore-next-line */
         return $this->parse($out);
     }
 
     /**
-    * @param array{screenBufferSize: array{x: int, y: int}} $out
-    */
+     * @param array{screenBufferSize: array{x: int, y: int}, cursorPosition: array{x: int, y: int}, windowSize: array{width: int, height: int}, maximumWindowSize: array{x: int, y: int}, attributes: int} $out
+     */
     private function parse(array $out): Size
     {
-        return new Size(max(0, (int) ($out['screenBufferSize']['y'])), max(0, (int) ($out['screenBufferSize']['x'])));
+        // Use the visible window size, not the screen buffer size which includes scrollback
+        return new Size(
+            max(0, (int) $out['windowSize']['height']),
+            max(0, (int) $out['windowSize']['width'])
+        );
     }
 }
