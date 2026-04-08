@@ -16,7 +16,11 @@
     "authors": [
         {
             "name": "Daniel Leech"
+        },
+        {
+            "name": "Yukabuki"
         }
+
     ],
     "require": {
         "php": "^8.1"
