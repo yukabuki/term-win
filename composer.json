@@ -3,6 +3,9 @@
     "description": "comprehensive low level terminal control",
     "type": "library",
     "license": "MIT",
+    "provide": {
+        "php-tui/term": "*"
+    },
     "autoload": {
         "psr-4": {
             "PhpTui\\Term\\": "src/"
