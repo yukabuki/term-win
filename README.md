@@ -7,6 +7,8 @@ PHP Term
   <img src="https://github.com/php-tui/term/assets/530801/ca7a8e17-2238-496d-aaa8-83c92f2f5009" alt="Term Logo"/>
 </p>
 
+This is a fork of [ALameLlama/term](https://github.com/ALameLlama/term) (which is itself a fork of [php-tui/term](https://github.com/php-tui/term)) adding native Windows support via PHP FFI.
+
 Low-level terminal control library **heavily** inspired by
 [crossterm](https://github.com/crossterm-rs/crossterm).
 

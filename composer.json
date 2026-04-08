@@ -1,5 +1,5 @@
 {
-    "name": "php-tui/term",
+    "name": "yukabuki/term-win",
     "description": "comprehensive low level terminal control",
     "type": "library",
     "license": "MIT",
