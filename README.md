@@ -14,7 +14,7 @@ Table of Contents
 -----------------
 
 - [Installation](#installation)
-- [Requiremens](#requirements)
+- [Requirements](#requirements)
 - [Usage](#usage)
     - [Actions](#actions)
     - [Events](#events)
@@ -22,6 +22,7 @@ Table of Contents
     - [Raw Mode](#raw-mode)
     - [ANSI parsing](#parsing)
 - [Testing](#testing)
+- [Windows Support](#windows-support)
 - [Contributing](#contributing)
 
 Installation
@@ -34,15 +35,9 @@ $ composer require php-tui/term
 Requirements
 ------------
 
-I have only tested this library on Linux. It currently requires `stty` to
-enable the raw mode and detect the current window size. It should work on
-MacOS and WSL.
-
-Native **Windows** is currently not supported as I cannot test on Windows, the
-architecture should support Windows however, so if you'd like to make a start
-look at
-[crossterm](https://github.com/crossterm-rs/crossterm/blob/master/src/style/sys/windows.rs)
-for inspiration and start a PR.
+- PHP 8.1+
+- **Linux / macOS / WSL**: `stty` must be available (standard on all POSIX systems)
+- **Windows**: PHP must be compiled with the [FFI extension](https://www.php.net/manual/en/book.ffi.php) enabled (`extension=ffi`, `ffi.enable=true` in `php.ini`)
 
 Usage
 -----
@@ -80,7 +75,7 @@ All actions are made available via. the `Actions` factory:
 | `Actions::setRgbBackgroundColor` | Set the background color using RGB |
 | `Actions::setForegroundColor` | Set the foreground color to one of the ANSI base colors |
 | `Actions::setBackgroundColor` | Set the background color to one of the ANSI base colors |
-| `Actions::moveCursor` | Move the cursor to an absolute position.<br/><br/>The top left cell is 0,0. |
+| `Actions::moveCursor` | Move the cursor to an absolute position.<br/><br/>The top left cell is line=1, col=1. |
 | `Actions::reset` | Reset all modes (styles and colors) |
 | `Actions::bold` | Enable or disable the bold styling |
 | `Actions::dim` | Enable or disable the dim styling |
@@ -100,8 +95,8 @@ All actions are made available via. the `Actions` factory:
 | `Actions::lineWrap` | Enable or disable line wrap |
 | `Actions::moveCursorNextLine` | Move the cursor down and to the start of the next line (or the given number of lines) |
 | `Actions::moveCursorPreviousLine` | Move the cursor up and to the start of the previous line (or the given number of lines) |
-| `Actions::moveCursorToColumn` | Move the cursor to the given column (0 based) |
-| `Actions::moveCursorToRow` | Move the cursor to the given row (0 based) |
+| `Actions::moveCursorToColumn` | Move the cursor to the given column (0-based) |
+| `Actions::moveCursorToRow` | Move the cursor to the given row (0-based) |
 | `Actions::moveCursorUp` | Move cursor up 1 or the given number of rows. |
 | `Actions::moveCursorRight` | Move cursor right 1 or the given number of columns. |
 | `Actions::moveCursorDown` | Move cursor down 1 or the given number of rows. |
@@ -136,7 +131,7 @@ while (true) {
 
 The events are as follows:
 
-- `PhpTui\Term\Event\CharKeyEvent`: Standard character key
+- `PhpTui\Term\Event\CharKeyEvent`: Standard character key (includes Unicode on all platforms)
 - `PhpTui\Term\Event\CodedKeyEvent`: Special key, e.g. escape, control, page
   up, arrow down, etc
 - `PhpTui\Term\Event\CursorPositionEvent`: as a response to
@@ -146,7 +141,7 @@ The events are as follows:
 - `PhpTui\Term\Event\MouseEvent`: When the
   `Actions::enableMouseCapture` has been called, provides mouse event
   information.
-- `PhpTui\Term\Event\TerminalResizedEvent`: The terminal was resized.
+- `PhpTui\Term\Event\TerminalResizedEvent`: The terminal was resized (Linux/macOS only via SIGWINCH; use size polling on Windows).
 
 ### Terminal Size
 
@@ -165,6 +160,8 @@ if (null !== $size) {
 }
 ```
 
+On Windows the visible window size is returned (not the scrollback buffer size).
+
 ### Raw Mode
 
 Raw mode disables all the default terminal behaviors and is what you typically
@@ -178,8 +175,20 @@ $terminal->enableRawMode();
 $terminal->disableRawMode();
 ```
 
-Always be sure to disable raw mode as it will leave the terminal in a barely
-useable state otherwise!
+Always be sure to disable raw mode — use a `try/finally` block to guarantee
+cleanup even on exceptions:
+
+```php
+$terminal->enableRawMode();
+try {
+    // your event loop
+} finally {
+    $terminal->disableRawMode();
+}
+```
+
+**Mouse input** is disabled in raw mode on all platforms. Call
+`Actions::enableMouseCapture()` explicitly to receive `MouseEvent`s.
 
 ### Parsing
 
@@ -197,7 +206,7 @@ $actions = AnsiParser::parseString($rawAnsiOutput, true);
 
 ## Testing
 
-The `Terminal` has testable versions of all it's dependencies:
+The `Terminal` has testable versions of all its dependencies:
 
 ```php
 <?php
@@ -207,8 +216,11 @@ $eventProvider = ArrayEventProvider::fromEvents(
     CharKeyEvent::new('c')
 );
 $infoProvider = ClosureInformationProvider::new(
-    function (string $classFqn): TerminalInformation {
-        return new class implements TerminalInformation {};
+    function (string $classFqn): ?TerminalInformation {
+        if ($classFqn === Size::class) {
+            return new Size(24, 80);
+        }
+        return null;
     }
 );
 $rawMode = new TestRawMode();
@@ -217,7 +229,7 @@ $term = Terminal::new(
     painter: $painter,
     infoProvider: $infoProvider,
     eventProvider: $eventProvider,
-    rawMode: $rawMode
+    rawMode: $rawMode,
 );
 $term->execute(
     Actions::printString('Hello World'),
@@ -230,8 +242,46 @@ echo implode("\n", array_map(
 )). "\n";
 ```
 
-See the example `testable.php` in `examples/`.
+See `example/testable.php` for a full demonstration.
+
+## Windows Support
+
+Native Windows is fully supported via PHP's [FFI extension](https://www.php.net/manual/en/book.ffi.php),
+which calls the Windows Console API (`kernel32.dll`) directly. No external
+tools (`stty`, etc.) are required.
+
+### Setup
+
+Enable FFI in your `php.ini`:
+
+```ini
+extension=ffi
+ffi.enable=true
+```
+
+Verify with:
+
+```
+php -m | findstr ffi
+```
+
+### How it works
+
+| Concern | Linux/macOS | Windows |
+| --- | --- | --- |
+| Raw mode | `stty raw -echo` | `SetConsoleMode` (kernel32) |
+| Terminal size | `stty -a` | `GetConsoleScreenBufferInfo` (visible window) |
+| Input reading | Non-blocking `STDIN` stream | `ReadConsoleInputW` (Unicode) |
+| Mouse capture | ANSI VT sequences | `ENABLE_MOUSE_INPUT` flag + ANSI VT sequences |
+
+### Examples
+
+```
+php example/events.php          # real-time event inspector (keyboard, mouse, focus)
+php example/terminal_size.php   # live terminal size monitor with ruler
+php example/testable.php        # color & style reference card
+```
 
 ## Contributing
 
-PRs for missing functionalities and improvements are charactr.
+PRs for missing functionalities and improvements are welcome.
